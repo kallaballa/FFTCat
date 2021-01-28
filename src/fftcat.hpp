@@ -16,6 +16,7 @@ using std::vector;
 
 static TextPlot plot;
 
+template<typename Tfftdata>
 void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t bufferSize, size_t sampleRate) {
 	SignalSource in(source, sampleRate);
 	FramesCollection frames(in, bufferSize);
@@ -24,10 +25,10 @@ void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector
 		SpectrumType signalSpectrum = signalFFT->fft(frame.toArray());
 
 		for (std::size_t i = 0; i < bufferSize; ++i) {
-			const double& re = signalSpectrum[i].real();
-			const double& im = signalSpectrum[i].imag();
-			std::cout.write(reinterpret_cast<const char*>(&re), sizeof(double));
-			std::cout.write(reinterpret_cast<const char*>(&im), sizeof(double));
+			Tfftdata re = signalSpectrum[i].real();
+			Tfftdata im = signalSpectrum[i].imag();
+			std::cout.write(reinterpret_cast<const char*>(&re), sizeof(Tfftdata));
+			std::cout.write(reinterpret_cast<const char*>(&im), sizeof(Tfftdata));
 		}
 	}
 }
@@ -48,30 +49,30 @@ void op_plot(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vecto
 	}
 }
 
-template<typename T>
+template<typename Tsample>
 void op_ifft(std::shared_ptr<Fft> signalFFT, const SpectrumType& source, vector<double>& target, size_t bufferSize) {
 	signalFFT->ifft(source, target.data());
 
 	for (std::size_t i = 0; i < bufferSize; ++i) {
-		const T& sample = target[i];
-		std::cout.write(reinterpret_cast<const char*>(&sample), sizeof(T));
+		const Tsample& sample = target[i];
+		std::cout.write(reinterpret_cast<const char*>(&sample), sizeof(Tsample));
 	}
 }
 
-template<typename T>
+template<typename Tsample, typename Tfftdata>
 void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot) {
 	SpectrumType source(bufferSize);
 	vector<double> target(bufferSize);
 	auto signalFFT = FftFactory::getFft(bufferSize);
 
 	for (std::istream* is : streams) {
-		double real;
-		double imag;
+		Tfftdata real;
+		Tfftdata imag;
 		while (is->good()) {
 			for (size_t i = 0; i < bufferSize; ++i) {
 				if (is->good()) {
-					is->read(reinterpret_cast<char*>(&real), sizeof(double));
-					is->read(reinterpret_cast<char*>(&imag), sizeof(double));
+					is->read(reinterpret_cast<char*>(&real), sizeof(Tfftdata));
+					is->read(reinterpret_cast<char*>(&imag), sizeof(Tfftdata));
 					source[i] = { real, imag };
 				} else {
 					source.resize(i);
@@ -83,25 +84,25 @@ void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sam
 			if(plot) {
 				op_iplot(source);
 			} else {
-				op_ifft<T>(signalFFT, source, target, bufferSize);
+				op_ifft<Tsample>(signalFFT, source, target, bufferSize);
 			}
 		}
 	}
 }
 
-template<typename T>
+template<typename Tsample, typename Tfftdata>
 void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot) {
 	vector<double> source(bufferSize);
 	vector<double> target(bufferSize);
 	auto signalFFT = FftFactory::getFft(bufferSize);
 
 	for (std::istream* is : streams) {
-		T sample;
+		Tsample sample;
 
 		while (is->good()) {
 			for (size_t i = 0; i < bufferSize; ++i) {
 				if (is->good()) {
-					is->read(reinterpret_cast<char*>(&sample), sizeof(T));
+					is->read(reinterpret_cast<char*>(&sample), sizeof(Tsample));
 					source[i] = sample;
 				} else {
 					source.resize(i);
@@ -113,7 +114,7 @@ void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t samp
 			if(plot) {
 				op_plot(signalFFT, source, target, bufferSize, sampleRate);
 			} else {
-				op_fft(signalFFT, source, target, bufferSize, sampleRate);
+				op_fft<Tfftdata>(signalFFT, source, target, bufferSize, sampleRate);
 			}
 		}
 	}
