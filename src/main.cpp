@@ -17,9 +17,9 @@ using std::vector;
 
 int main(int argc, char** argv) {
   std::vector<string> files;
-  size_t bufferSize = 1024;
+  size_t bufferSize = 256;
   uint32_t sampleRate = 44100;
-  uint32_t sampleLen = 1;
+  uint32_t sampleLen = 4;
 
   po::options_description genericDesc("Options");
   genericDesc.add_options()("help,h", "Produce help message")
@@ -45,8 +45,8 @@ int main(int argc, char** argv) {
   po::store(po::command_line_parser(argc, argv).options(cmdline_options).positional(p).run(), vm);
   po::notify(vm);
 
-  if (vm.count("help") || (vm.count("plot") && vm.count("inverse"))) {
-    std::cerr << "Usage: fftcat [options] FILES..." << std::endl;
+  if (vm.count("help")) {
+    std::cerr << "Usage: fftcat [options] [FILES...]" << std::endl;
     std::cerr << visible;
     return 1;
   }
@@ -66,35 +66,30 @@ int main(int argc, char** argv) {
   	}
   }
 
-  Operation op = FFT;
-  if(vm.count("plot")) {
-  	op = PLOT;
-  } if(vm.count("inverse")) {
-  	op = IFFT;
-	}
+  bool doPlot = vm.count("plot");
 
-  if(op == IFFT) {
+  if(vm.count("inverse")) {
 		if(sampleLen == 1) {
-			ifftcat<char>(streams, bufferSize, sampleRate, op);
+			ifftcat<char>(streams, bufferSize, sampleRate, doPlot);
 		} else if(sampleLen == 2) {
-			ifftcat<uint16_t>(streams, bufferSize, sampleRate, op);
+			ifftcat<uint16_t>(streams, bufferSize, sampleRate, doPlot);
 		} else if(sampleLen == 4) {
-			ifftcat<uint32_t>(streams, bufferSize, sampleRate, op);
+			ifftcat<uint32_t>(streams, bufferSize, sampleRate, doPlot);
 		} else if(sampleLen == 8) {
-			ifftcat<uint64_t>(streams, bufferSize, sampleRate, op);
+			ifftcat<uint64_t>(streams, bufferSize, sampleRate, doPlot);
 		} else {
 			std::cerr << "sample length must be a power of 2 and less than 16" << std::endl;
 			return 2;
 		}
   } else {
 		if(sampleLen == 1) {
-			fftcat<char>(streams, bufferSize, sampleRate, op);
+			fftcat<char>(streams, bufferSize, sampleRate, doPlot);
 		} else if(sampleLen == 2) {
-			fftcat<uint16_t>(streams, bufferSize, sampleRate, op);
+			fftcat<uint16_t>(streams, bufferSize, sampleRate, doPlot);
 		} else if(sampleLen == 4) {
-			fftcat<uint32_t>(streams, bufferSize, sampleRate, op);
+			fftcat<uint32_t>(streams, bufferSize, sampleRate, doPlot);
 		} else if(sampleLen == 8) {
-			fftcat<uint64_t>(streams, bufferSize, sampleRate, op);
+			fftcat<uint64_t>(streams, bufferSize, sampleRate, doPlot);
 		} else {
 			std::cerr << "sample length must be a power of 2 and less than 16" << std::endl;
 			return 2;

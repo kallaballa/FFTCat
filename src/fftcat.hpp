@@ -14,11 +14,7 @@
 using namespace Aquila;
 using std::vector;
 
-enum Operation {
-	FFT,
-	IFFT,
-	PLOT
-};
+static TextPlot plot;
 
 void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t bufferSize, size_t sampleRate) {
 	SignalSource in(source, sampleRate);
@@ -36,9 +32,13 @@ void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector
 	}
 }
 
+void op_iplot(const SpectrumType& source) {
+	plot.setTitle("Input FFT");
+	plot.plotSpectrum(source);
+}
+
 void op_plot(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t bufferSize, size_t sampleRate) {
-	TextPlot plot;
-	plot.setTitle("Signal");
+	plot.setTitle("Output FFT");
 	SignalSource in(source, sampleRate);
 	FramesCollection frames(in, bufferSize);
 
@@ -49,7 +49,7 @@ void op_plot(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vecto
 }
 
 template<typename T>
-void op_ifft(std::shared_ptr<Fft> signalFFT, SpectrumType source, vector<double>& target, size_t bufferSize) {
+void op_ifft(std::shared_ptr<Fft> signalFFT, const SpectrumType& source, vector<double>& target, size_t bufferSize) {
 	signalFFT->ifft(source, target.data());
 
 	for (std::size_t i = 0; i < bufferSize; ++i) {
@@ -59,8 +59,7 @@ void op_ifft(std::shared_ptr<Fft> signalFFT, SpectrumType source, vector<double>
 }
 
 template<typename T>
-void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, Operation op) {
-	assert(op != FFT && op != PLOT);
+void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot) {
 	SpectrumType source(bufferSize);
 	vector<double> target(bufferSize);
 	auto signalFFT = FftFactory::getFft(bufferSize);
@@ -81,14 +80,17 @@ void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sam
 				}
 			}
 
-			op_ifft<T>(signalFFT, source, target, bufferSize);
+			if(plot) {
+				op_iplot(source);
+			} else {
+				op_ifft<T>(signalFFT, source, target, bufferSize);
+			}
 		}
 	}
 }
 
 template<typename T>
-void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, Operation op) {
-	assert(op != IFFT);
+void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot) {
 	vector<double> source(bufferSize);
 	vector<double> target(bufferSize);
 	auto signalFFT = FftFactory::getFft(bufferSize);
@@ -108,10 +110,10 @@ void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t samp
 				}
 			}
 
-			if(op == FFT) {
-				op_fft(signalFFT, source, target, bufferSize, sampleRate);
-			} else if(op == PLOT) {
+			if(plot) {
 				op_plot(signalFFT, source, target, bufferSize, sampleRate);
+			} else {
+				op_fft(signalFFT, source, target, bufferSize, sampleRate);
 			}
 		}
 	}
