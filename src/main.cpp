@@ -15,9 +15,14 @@ using std::cerr;
 using std::endl;
 using std::vector;
 
+//does report true for 0
+bool is_power_of_two(const size_t& x) {
+	return (x & (x - 1)) == 0;
+}
+
 int main(int argc, char** argv) {
   std::vector<string> files;
-  size_t bufferSize = 256;
+  size_t fftSize = 256;
   uint32_t sampleRate = 44100;
   uint32_t sampleLen = 4;
   string frequencies;
@@ -26,7 +31,7 @@ int main(int argc, char** argv) {
   genericDesc.add_options()("help,h", "Produce help message")
 		("inverse,i", "Calculate the ifft instead of the fft")
 		("plot,p", "Write a signal plot to the terminal instead of the raw fft stream")
-		("buffersize,b", po::value<size_t>(&bufferSize)->default_value(bufferSize),"The i/o buffer size in bytes")
+		("fftsize,z", po::value<size_t>(&fftSize)->default_value(fftSize),"The number of bins for the fft. must be a power of 2")
 		("samplerate,r", po::value<uint32_t>(&sampleRate)->default_value(sampleRate),"The i/o sample rate in hertz")
   	("samplelen,s", po::value<uint32_t>(&sampleLen)->default_value(sampleLen),"The i/o sample length in bytes")
 		("filter,f", po::value<string>(&frequencies)->default_value(frequencies),"The low and high pass frequency of the filter in hertz delimited by a colon character");
@@ -66,6 +71,11 @@ int main(int argc, char** argv) {
   	}
   }
 
+  if(fftSize == 0 || !is_power_of_two(fftSize)) {
+  	std::cerr << "fftsize has to be a power of 2" << std::endl;
+  	return 4;
+  }
+
   bool doPlot = vm.count("plot");
 
 	std::vector<FFTFilter> filters;
@@ -73,7 +83,7 @@ int main(int argc, char** argv) {
 	FrequencyType highPassFreq = 0;
   if(!frequencies.empty()) {
   	auto pos = frequencies.find(',');
-  	if(pos != string::npos) {
+  	if(pos != string::npos && frequencies.size() > pos) {
   		lowPassFreq = stoi(frequencies.substr(0, pos));
   		highPassFreq = stoi(frequencies.substr(pos + 1));
   	}
@@ -86,26 +96,26 @@ int main(int argc, char** argv) {
   //TODO type-selection based on the platform.
   if(vm.count("inverse")) {
 		if(sampleLen == 1) {
-			ifftcat<uint8_t, float_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			ifftcat<uint8_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else if(sampleLen == 2) {
-			ifftcat<uint16_t, float_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			ifftcat<uint16_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else if(sampleLen == 4) {
-			ifftcat<uint32_t, float_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			ifftcat<uint32_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else if(sampleLen == 8) {
-			ifftcat<uint64_t, double_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			ifftcat<uint64_t, double_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else {
 			std::cerr << "sample length must be a power of 2 and less than 16" << std::endl;
 			return 2;
 		}
   } else {
 		if(sampleLen == 1) {
-			fftcat<uint8_t, float_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			fftcat<uint8_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else if(sampleLen == 2) {
-			fftcat<uint16_t, float_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			fftcat<uint16_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else if(sampleLen == 4) {
-			fftcat<uint32_t, float_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			fftcat<uint32_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else if(sampleLen == 8) {
-			fftcat<uint64_t, double_t>(streams, bufferSize, sampleRate, doPlot, filters);
+			fftcat<uint64_t, double_t>(streams, fftSize, sampleRate, doPlot, filters);
 		} else {
 			std::cerr << "sample length must be a power of 2 and less than 16" << std::endl;
 			return 2;
