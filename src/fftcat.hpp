@@ -16,20 +16,55 @@ using std::vector;
 
 static TextPlot plot;
 
-template<typename Tfftdata>
-void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t bufferSize, size_t sampleRate) {
-	SignalSource in(source, sampleRate);
-	FramesCollection frames(in, bufferSize);
 
-	for (auto frame : frames) {
-		SpectrumType signalSpectrum = signalFFT->fft(frame.toArray());
+class FFTFilter {
+public:
+	FrequencyType lowFreq_;
+	FrequencyType highFreq_;
+};
 
-		for (std::size_t i = 0; i < bufferSize; ++i) {
-			Tfftdata re = signalSpectrum[i].real();
-			Tfftdata im = signalSpectrum[i].imag();
-			std::cout.write(reinterpret_cast<const char*>(&re), sizeof(Tfftdata));
-			std::cout.write(reinterpret_cast<const char*>(&im), sizeof(Tfftdata));
+SpectrumType make_high_pass(const size_t& bufferSize, const size_t& sampleRate, const FFTFilter& filter) {
+  SpectrumType filterSpectrum(bufferSize);
+	for (std::size_t i = 0; i < bufferSize; ++i) {
+		if (i < (bufferSize * filter.highFreq_ / sampleRate)) {
+			filterSpectrum[i] = 0.0;
+		} else {
+			filterSpectrum[i] = 1.0;
 		}
+	}
+	return filterSpectrum;
+}
+
+SpectrumType make_low_pass(const size_t& bufferSize, const size_t& sampleRate, const FFTFilter& filter) {
+  SpectrumType filterSpectrum(bufferSize);
+	for (std::size_t i = 0; i < bufferSize; ++i) {
+		if (i < (bufferSize * filter.lowFreq_ / sampleRate)) {
+			filterSpectrum[i] = 1.0;
+		} else {
+			filterSpectrum[i] = 0.0;
+		}
+	}
+	return filterSpectrum;
+}
+
+void op_apply_filters(size_t bufferSize, uint32_t sampleRate, SpectrumType& source, const std::vector<FFTFilter>& filters) {
+	for(const FFTFilter& f : filters) {
+		SpectrumType highpass = make_high_pass(bufferSize, sampleRate, f);
+		SpectrumType lowpass = make_low_pass(bufferSize, sampleRate, f);
+		std::transform(
+				std::begin(source),
+				std::end(source),
+				std::begin(highpass),
+				std::begin(source),
+				[] (Aquila::ComplexType x, Aquila::ComplexType y) { return x * y; }
+		);
+		std::transform(
+				std::begin(source),
+				std::end(source),
+				std::begin(lowpass),
+				std::begin(source),
+				[] (Aquila::ComplexType x, Aquila::ComplexType y) { return x * y; }
+		);
 	}
 }
 
@@ -49,8 +84,26 @@ void op_plot(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vecto
 	}
 }
 
+template<typename Tfftdata>
+void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t bufferSize, size_t sampleRate, const std::vector<FFTFilter>& filters) {
+	SignalSource in(source, sampleRate);
+	FramesCollection frames(in, bufferSize);
+
+	for (auto frame : frames) {
+		SpectrumType signalSpectrum = signalFFT->fft(frame.toArray());
+		op_apply_filters(bufferSize, sampleRate, signalSpectrum, filters);
+
+		for (std::size_t i = 0; i < bufferSize; ++i) {
+			Tfftdata re = signalSpectrum[i].real();
+			Tfftdata im = signalSpectrum[i].imag();
+			std::cout.write(reinterpret_cast<const char*>(&re), sizeof(Tfftdata));
+			std::cout.write(reinterpret_cast<const char*>(&im), sizeof(Tfftdata));
+		}
+	}
+}
 template<typename Tsample>
-void op_ifft(std::shared_ptr<Fft> signalFFT, const SpectrumType& source, vector<double>& target, size_t bufferSize) {
+void op_ifft(std::shared_ptr<Fft> signalFFT, SpectrumType& source, vector<double>& target, size_t bufferSize, size_t sampleRate, const std::vector<FFTFilter>& filters) {
+	op_apply_filters(bufferSize, sampleRate, source, filters);
 	signalFFT->ifft(source, target.data());
 
 	for (std::size_t i = 0; i < bufferSize; ++i) {
@@ -60,7 +113,7 @@ void op_ifft(std::shared_ptr<Fft> signalFFT, const SpectrumType& source, vector<
 }
 
 template<typename Tsample, typename Tfftdata>
-void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot) {
+void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot, std::vector<FFTFilter> filters) {
 	SpectrumType source(bufferSize);
 	vector<double> target(bufferSize);
 	auto signalFFT = FftFactory::getFft(bufferSize);
@@ -84,14 +137,14 @@ void ifftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sam
 			if(plot) {
 				op_iplot(source);
 			} else {
-				op_ifft<Tsample>(signalFFT, source, target, bufferSize);
+				op_ifft<Tsample>(signalFFT, source, target, bufferSize, sampleRate, filters);
 			}
 		}
 	}
 }
 
 template<typename Tsample, typename Tfftdata>
-void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot) {
+void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t sampleRate, bool plot, std::vector<FFTFilter> filters) {
 	vector<double> source(bufferSize);
 	vector<double> target(bufferSize);
 	auto signalFFT = FftFactory::getFft(bufferSize);
@@ -114,7 +167,7 @@ void fftcat(std::vector<std::istream*> streams, size_t bufferSize, uint32_t samp
 			if(plot) {
 				op_plot(signalFFT, source, target, bufferSize, sampleRate);
 			} else {
-				op_fft<Tfftdata>(signalFFT, source, target, bufferSize, sampleRate);
+				op_fft<Tfftdata>(signalFFT, source, target, bufferSize, sampleRate, filters);
 			}
 		}
 	}
