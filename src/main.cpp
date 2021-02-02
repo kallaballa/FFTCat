@@ -25,7 +25,8 @@ int main(int argc, char** argv) {
   size_t fftSize = 256;
   uint32_t sampleRate = 44100;
   uint32_t sampleLen = 4;
-  string frequencies;
+	FrequencyType lowPassFreq = std::numeric_limits<FrequencyType>::max();
+	FrequencyType highPassFreq = 0;
 
   po::options_description genericDesc("Options");
   genericDesc.add_options()("help,h", "Produce help message")
@@ -34,9 +35,10 @@ int main(int argc, char** argv) {
 		("fftsize,z", po::value<size_t>(&fftSize)->default_value(fftSize),"The number of bins for the fft. must be a power of 2")
 		("samplerate,r", po::value<uint32_t>(&sampleRate)->default_value(sampleRate),"The i/o sample rate in hertz")
   	("samplelen,s", po::value<uint32_t>(&sampleLen)->default_value(sampleLen),"The i/o sample length in bytes")
-		("filter,f", po::value<string>(&frequencies)->default_value(frequencies),"The low and high pass frequency of the filter in hertz delimited by a colon character");
+		("lowpass,l", po::value<FrequencyType>(&lowPassFreq)->default_value(lowPassFreq),"The frequency of the low pass filter in hertz")
+		("highpass,k", po::value<FrequencyType>(&highPassFreq)->default_value(highPassFreq),"The frequency of the high pass filter in hertz");
 
-  po::options_description hidden("Hidden options");
+	po::options_description hidden("Hidden options");
   hidden.add_options()("files", po::value<std::vector<string>>(&files), "files");
 
   po::options_description cmdline_options;
@@ -71,29 +73,33 @@ int main(int argc, char** argv) {
   	}
   }
 
+  if(sampleLen == 0 || !is_power_of_two(sampleLen)) {
+  	std::cerr << "sampleLen has to be a power of 2" << std::endl;
+  	return 2;
+  }
+
+  if(sampleLen > 4) {
+  	std::cerr << "sampleLen has to be <= 4" << std::endl;
+  	return 2;
+  }
+
   if(fftSize == 0 || !is_power_of_two(fftSize)) {
   	std::cerr << "fftsize has to be a power of 2" << std::endl;
-  	return 4;
+  	return 2;
   }
 
   bool doPlot = vm.count("plot");
 
 	std::vector<FFTFilter> filters;
-	FrequencyType lowPassFreq = std::numeric_limits<FrequencyType>::max();
-	FrequencyType highPassFreq = 0;
-  if(!frequencies.empty()) {
-  	auto pos = frequencies.find(',');
-  	if(pos != string::npos && frequencies.size() > pos) {
-  		lowPassFreq = stoi(frequencies.substr(0, pos));
-  		highPassFreq = stoi(frequencies.substr(pos + 1));
-  	}
+	if(lowPassFreq < std::numeric_limits<FrequencyType>::max()) {
+		filters.push_back({LOW_PASS, lowPassFreq});
+	}
 
-		if(lowPassFreq < std::numeric_limits<FrequencyType>::max() && highPassFreq > 0) {
-			filters.push_back({lowPassFreq, highPassFreq});
-		}
-  }
+	if(highPassFreq > 0) {
+		filters.push_back({HIGH_PASS, highPassFreq});
+	}
 
-  //TODO type-selection based on the platform.
+	//TODO type-selection based on the platform.
   if(vm.count("inverse")) {
 		if(sampleLen == 1) {
 			ifftcat<uint8_t, float_t>(streams, fftSize, sampleRate, doPlot, filters);

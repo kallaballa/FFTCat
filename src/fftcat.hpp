@@ -16,17 +16,21 @@ using std::vector;
 
 static TextPlot plot;
 
+enum FilterType {
+	LOW_PASS,
+	HIGH_PASS
+};
 
 class FFTFilter {
 public:
-	FrequencyType lowFreq_;
-	FrequencyType highFreq_;
+	FilterType type_;
+	FrequencyType freq_;
 };
 
 SpectrumType make_high_pass(const size_t& fftSize, const size_t& sampleRate, const FFTFilter& filter) {
   SpectrumType filterSpectrum(fftSize);
 	for (std::size_t i = 0; i < fftSize; ++i) {
-		if (i < (fftSize * filter.highFreq_ / sampleRate)) {
+		if (i < (fftSize * filter.freq_ / sampleRate)) {
 			filterSpectrum[i] = 0.0;
 		} else {
 			filterSpectrum[i] = 1.0;
@@ -38,7 +42,7 @@ SpectrumType make_high_pass(const size_t& fftSize, const size_t& sampleRate, con
 SpectrumType make_low_pass(const size_t& fftSize, const size_t& sampleRate, const FFTFilter& filter) {
   SpectrumType filterSpectrum(fftSize);
 	for (std::size_t i = 0; i < fftSize; ++i) {
-		if (i < (fftSize * filter.lowFreq_ / sampleRate)) {
+		if (i < (fftSize * filter.freq_ / sampleRate)) {
 			filterSpectrum[i] = 1.0;
 		} else {
 			filterSpectrum[i] = 0.0;
@@ -47,43 +51,38 @@ SpectrumType make_low_pass(const size_t& fftSize, const size_t& sampleRate, cons
 	return filterSpectrum;
 }
 
-void op_apply_filters(size_t fftSize, uint32_t sampleRate, SpectrumType& source, const std::vector<FFTFilter>& filters) {
+void op_apply_filters(SpectrumType& source, const size_t& fftSize, const size_t& sampleRate, const std::vector<FFTFilter>& filters) {
 	for(const FFTFilter& f : filters) {
-		SpectrumType highpass = make_high_pass(fftSize, sampleRate, f);
-		SpectrumType lowpass = make_low_pass(fftSize, sampleRate, f);
-		SpectrumType multiplied(lowpass.size());
-
-		std::transform(
-				std::begin(highpass),
-				std::end(highpass),
-				std::begin(lowpass),
-				std::begin(multiplied),
-				[] (Aquila::ComplexType x, Aquila::ComplexType y) { return x * y; }
-		);
+		SpectrumType filterSpectrum;
+		if(f.type_ == HIGH_PASS)
+			filterSpectrum = make_high_pass(fftSize, sampleRate, f);
+		else
+			filterSpectrum = make_low_pass(fftSize, sampleRate, f);
 
 		std::transform(
 				std::begin(source),
 				std::end(source),
-				std::begin(multiplied),
+				std::begin(filterSpectrum),
 				std::begin(source),
 				[] (Aquila::ComplexType x, Aquila::ComplexType y) { return x * y; }
 		);
 	}
 }
 
-void op_iplot(const SpectrumType& source) {
-	plot.setTitle("Input FFT");
+void op_text_plot(SpectrumType& source, size_t fftSize, size_t sampleRate, const std::vector<FFTFilter>& filters) {
+
+	op_apply_filters(source, fftSize, sampleRate, filters);
+	plot.setTitle("Spectrum");
 	plot.plotSpectrum(source);
 }
 
-void op_plot(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t fftSize, size_t sampleRate) {
-	plot.setTitle("Output FFT");
+void op_text_plot(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector<double>& target, size_t fftSize, size_t sampleRate, const std::vector<FFTFilter>& filters) {
 	SignalSource in(source, sampleRate);
 	FramesCollection frames(in, fftSize);
 
 	for (auto frame : frames) {
-		const SpectrumType& signalSpectrum = signalFFT->fft(frame.toArray());
-		plot.plotSpectrum(signalSpectrum);
+		SpectrumType s = signalFFT->fft(frame.toArray());
+		op_text_plot(s, fftSize, sampleRate, filters);
 	}
 }
 
@@ -94,7 +93,7 @@ void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector
 
 	for (auto frame : frames) {
 		SpectrumType signalSpectrum = signalFFT->fft(frame.toArray());
-		op_apply_filters(fftSize, sampleRate, signalSpectrum, filters);
+		op_apply_filters(signalSpectrum, fftSize, sampleRate, filters);
 
 		for (std::size_t i = 0; i < fftSize; ++i) {
 			Tfftdata re = signalSpectrum[i].real();
@@ -106,7 +105,7 @@ void op_fft(std::shared_ptr<Fft> signalFFT, const vector<double>& source, vector
 }
 template<typename Tsample>
 void op_ifft(std::shared_ptr<Fft> signalFFT, SpectrumType& source, vector<double>& target, size_t fftSize, size_t sampleRate, const std::vector<FFTFilter>& filters) {
-	op_apply_filters(fftSize, sampleRate, source, filters);
+	op_apply_filters(source, fftSize, sampleRate, filters);
 	assert(source.size() == target.size());
 	signalFFT->ifft(source, target.data());
 
@@ -140,7 +139,7 @@ void ifftcat(std::vector<std::istream*>& streams, size_t fftSize, uint32_t sampl
 				break;
 
 			if(plot) {
-				op_iplot(source);
+				op_text_plot(source, fftSize, sampleRate, filters);
 			} else {
 				op_ifft<Tsample>(signalFFT, source, target, fftSize, sampleRate, filters);
 			}
@@ -171,7 +170,7 @@ void fftcat(std::vector<std::istream*>& streams, size_t fftSize, uint32_t sample
 				break;
 
 			if(plot) {
-				op_plot(signalFFT, source, target, fftSize, sampleRate);
+				op_text_plot(signalFFT, source, target, fftSize, sampleRate, filters);
 			} else {
 				op_fft<Tfftdata>(signalFFT, source, target, fftSize, sampleRate, filters);
 			}
